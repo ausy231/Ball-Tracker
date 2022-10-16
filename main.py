@@ -3,10 +3,9 @@ from typing import Callable, Any
 
 from PIL import Image
 import cv2
-import timeit
 
 FRAME_COUNT = 40
-COLOUR_DISTANCE = 10
+COLOUR_DISTANCE = 40
 MAX_PACK_SIZE = 1000
 MIN_PACK_SIZE = 50
 MAX_PACK_PROPORTIONS_RATIO = 2
@@ -48,10 +47,21 @@ def get_frames(path, frame_count):
     return frames
 
 
+class Ball:
+    def __init__(self, frame_number, pos , size):
+        self.pos = pos
+        self.frame_number = frame_number
+        self.size = size
+
+    def __repr__(self):
+        return f"Ball ({self.frame_number}): ({self.pos}), {self.size} pixels"
+
+
 class BallTracker:
     def __init__(self, path: str, frame_count=FRAME_COUNT, colour_distance=COLOUR_DISTANCE) -> None:
         self.path: str = path
         self.ball_packs: [[(int,)]] = []
+        self.balls = []
         self.ball_pack_sizes: [int] = []
         self.ball_locations: [(int,)] = []
         self.ball_frame_numbers: [int] = []
@@ -69,15 +79,17 @@ class BallTracker:
             self.analise_frame(self.get_moving_pixels())
 
         frame = self.frames[0].copy()
-        for ball in self.ball_packs:
+        for i, ball in enumerate(self.ball_packs):
             for pos in ball:
                 frame.putpixel(pos, (255, 0, 0))
+            if i <= 255:
+                frame.putpixel(self.balls[i].pos, (i, self.balls[i].frame_number, 255))
+
 
         frame.save("coordinates.png")
+        self.get_ball_path()
 
-        #print("new way", timeit.timeit(self.new_way, number=1))
-
-        print("old way", timeit.timeit(self.get_ball_path, number=1))
+        # print("old way", timeit.timeit(self.get_ball_path, number=1))
 
         # self.predict(self.get_ball_path())
 
@@ -93,11 +105,11 @@ class BallTracker:
 
         for y in range(small_height):
             for x in range(small_width):
-                if math.dist(current_small_frame[x, y], last_small_frame[x, y]) > 30:
+                if math.dist(current_small_frame[x, y], last_small_frame[x, y]) > self.colour_distance:
                     for i in range(4):
                         for ii in range(4):
                             if math.dist(current_frame_data[x * 4 - i, y * 4 - ii],
-                                last_frame_data[x * 4 - i, y * 4 - ii]) > self.colour_distance:
+                                         last_frame_data[x * 4 - i, y * 4 - ii]) > self.colour_distance:
                                 moving_pixels.append((x * 4 - i, y * 4 - ii))
 
         return moving_pixels
@@ -159,10 +171,11 @@ class BallTracker:
                     else:
                         incorrect_pixels += 1
 
-                ball_average_position[0] /= len(pack_pixels)
-                ball_average_position[1] /= len(pack_pixels)
+                ball_average_position[0] //= len(pack_pixels)
+                ball_average_position[1] //= len(pack_pixels)
                 circle_percentage = correct_pixels / (correct_pixels + incorrect_pixels)
                 if circle_percentage > MIN_CIRCLE_PERCENTAGE:
+                    self.balls.append(Ball(self.frame_number, ball_average_position, len(pack_pixels)))
                     self.ball_packs.append(pack_pixels)
                     self.ball_locations.append(ball_average_position)
                     self.ball_frame_numbers.append(self.frame_number)
@@ -180,14 +193,18 @@ class BallTracker:
             if valid(x, y):
                 assess_pack(get_pack(x, y, valid))
 
-    def new_way(self):
-        acceptdistance = 4
+    def get_ball_path(self):
+        accepted_time_distance = 7
+        accepted_size_distance = 3
+        accepted_distance = 10
+        accepted_angle = 20
 
-        def valid_chain(a,b,c):
-            if angle(self.getball(a), self.getball(b), self.getball(c)) < 10:
-                if 0.3 < self.ball_pack_sizes[a]/self.ball_pack_sizes[b] < 3:
-                    if 0.3 < self.ball_pack_sizes[b]/self.ball_pack_sizes[c] < 3:
-                        if .1 < math.dist(self.getball(i) + [0], self.getball(ii) + [0]) / math.dist(self.getball(ii) + [0], self.getball(iii) + [0]) < 10:
+        def valid_chain(a, b, c):
+            if angle(self.balls[a].pos, self.balls[b].pos, self.balls[c].pos) < accepted_angle:
+                return True
+                if True or (1/accepted_size_distance) < self.balls[a].size / self.balls[b].size < accepted_size_distance:
+                    if True or (1/accepted_size_distance) < self.balls[b].size / self.balls[c].size < accepted_size_distance:
+                        if True or (1/accepted_distance) < math.dist(self.balls[i].pos, self.balls[ii].pos) / math.dist(self.balls[ii].pos, self.balls[iii].pos) < accepted_distance:
                             return True
             return False
 
@@ -195,18 +212,16 @@ class BallTracker:
 
         three_chains = []
         i = 0
-        while i < len(self.ball_frame_numbers) - 1:
+        while i < len(self.balls) - 1:
             ii = i
-            while self.ball_frame_numbers[ii] == self.ball_frame_numbers[i] and ii < len(self.ball_frame_numbers) - 1:
+            while self.balls[ii].frame_number == self.balls[i].frame_number and ii < len(self.balls) - 1:
                 ii += 1
-            while ii < len(self.ball_frame_numbers) - 1 and self.ball_frame_numbers[ii] - self.ball_frame_numbers[
-                i] <= acceptdistance:
+            while ii < len(self.balls) - 1 and self.balls[ii].frame_number - self.balls[i].frame_number <= accepted_time_distance:
                 iii = ii
-                while self.ball_frame_numbers[iii] == self.ball_frame_numbers[ii] and iii < len(
-                        self.ball_frame_numbers) - 1:
+                while self.balls[iii].frame_number == self.balls[ii].frame_number and iii < len(self.balls) - 1:
                     iii += 1
-                while iii < len(self.ball_frame_numbers) - 1 and self.ball_frame_numbers[iii] - self.ball_frame_numbers[
-                    ii] <= acceptdistance:
+                while iii < len(self.balls) - 1 and self.balls[iii].frame_number - self.balls[ii].frame_number <= accepted_time_distance:
+
                     if valid_chain(i, ii, iii):
                         three_chains.append([i, ii, iii])
                     iii += 1
@@ -222,7 +237,7 @@ class BallTracker:
             chain = three_chains[i]
             found_dup = False
             while j < len(three_chains) and three_chains[j][0] == chain[0] and three_chains[j][2] == chain[2]:
-                if self.ball_frame_numbers[chain[1]] != self.ball_frame_numbers[three_chains[j][1]]:
+                if self.balls[chain[1]].frame_number != self.balls[three_chains[j][1]].frame_number:
                     del three_chains[j]
                     found_dup = True
                 else:
@@ -238,30 +253,18 @@ class BallTracker:
         three_chains.sort()
         print(len(three_chains))
 
-
-        """
-        def link_up():
-            chains_index = 0
-            while chains_index < len(chains):
-                chain = chains[chains_index]
-
-                def link(a: int, b: int) -> bool:
-                    return a[0] == b[-2] and a[1] == b[-1]
-
-                for three_chain in [three_chain for three_chain in three_chains if link(three_chain, chain)]:
-                    chains.append(chain + [three_chain[-1]])
-                chains_index += 1
-        """
         to_do = three_chains[:]
-        chains = [[0,0,0]]
+        chains = [[0, 0, 0]]
         while to_do:
-            chain = to_do.pop(0)
+            chain = to_do.pop(-1)
             for new_chain in three_chains:
                 if chain[-2] == new_chain[0] and chain[-1] == new_chain[1]:
                     chain.append(new_chain[2])
                     to_do.append(chain)
+                    chains.append(chain)
 
-        chains.sort(key=len)
+        chains.sort(key=lambda chain: (len(chain), chain[-1]))
+        print([chain for chain in chains if len(chain) == len(chains[-1])])
         down_path = chains[-1]
 
         chains_with_start = [chain for chain in chains if chain[0] == down_path[-1]]
@@ -278,99 +281,13 @@ class BallTracker:
                 pitch_map.putpixel((x, y), (255, 0, 255))
         pitch_map.save("pitchmap.png")
 
-        print(self.ball_path)
-
     def predict(self, ball_path):
         pass
 
-    def getball(self, i):
-        return [self.ball_locations[i][0], self.ball_locations[i][1]]
-
-    def get_ball_path(self) -> [int]:
-        acceptdistance = 4
-
-        ball_frame_numbers = self.ball_frame_numbers
-        three_chains = []
-        i = 0
-        while i < len(ball_frame_numbers) - 1:
-            ii = i
-            while ball_frame_numbers[ii] == ball_frame_numbers[i] and ii < len(ball_frame_numbers) - 1:
-                ii += 1
-            while ii < len(ball_frame_numbers) - 1 and ball_frame_numbers[ii] - ball_frame_numbers[i] <= acceptdistance:
-                iii = ii
-                while ball_frame_numbers[iii] == ball_frame_numbers[ii] and iii < len(ball_frame_numbers) - 1:
-                    iii += 1
-                while iii < len(ball_frame_numbers) - 1 and ball_frame_numbers[iii] - ball_frame_numbers[
-                    ii] <= acceptdistance:
-                    if angle(self.getball(i), self.getball(ii), self.getball(iii)) < 20 and .25 < math.dist(
-                            self.getball(i) + [0], self.getball(ii) + [0]) / math.dist(self.getball(ii) + [0], self.getball(iii) + [0]) < 4:
-                        three_chains.append([i, ii, iii])
-                    iii += 1
-                ii += 1
-            i += 1
-
-        three_chains.sort(key=lambda x: (x[0], x[2]))
-        i = 0
-        while i < len(three_chains):
-            j = i + 1
-            chain = three_chains[i]
-            found_dup = False
-            while j < len(three_chains) and three_chains[j][0] == chain[0] and three_chains[j][2] == chain[2]:
-                if self.ball_frame_numbers[chain[1]] != self.ball_frame_numbers[three_chains[j][1]]:
-                    del three_chains[j]
-                    found_dup = True
-                else:
-                    j += 1
-            if found_dup:
-                del three_chains[i]
-            else:
-                j += 1
-            i = j - 1
-
-        print(len(three_chains))
-
-        chains = three_chains[:]
-        i = 0
-        while i < len(chains):
-            chain = chains[i]
-            for new_chain in three_chains:
-                if chain[-2] == new_chain[0] and chain[-1] == new_chain[1]:
-                    chains.append(chain + [new_chain[2]])
-
-            i += 1
-
-        print(1)
-
-        chains.sort(key=len)
-        down_path = chains[-1]
-        up_path = []
-        up_path = sorted([chain for chain in chains if chain[0] == down_path[-1]])[-1]
-
-        self.ball_path = down_path + up_path
-
-        pitch_map = self.frames[0].copy()
-        for i in range(len(self.ball_path)):
-            for x, y in self.ball_packs[self.ball_path[i]]:
-                pitch_map.putpixel((x, y), (255, 0, 255))
-        pitch_map.save("pitchmap.png")
-
-        
-        print(self.ball_path)
-
-
-
-
-import cProfile
-import pstats
-
 
 def main():
-    with cProfile.Profile() as pr:
-        tracker = BallTracker("video2.mov")
-        tracker.analise_video()
-    stats = pstats.Stats(pr)
-    stats.sort_stats(pstats.SortKey.TIME)
-    stats.print_stats()
+    tracker = BallTracker("video0708.mov")
+    tracker.analise_video()
 
 
 if __name__ == '__main__':
