@@ -22,3 +22,5 @@ Basically, the code works by going through the following steps:
 10) The longest chain is detirmined to be the ball path
 11) Try and find the longest path the starts at the bottom of the ball path (not always enough data on the way up to track this)
 12) Now you have the full ball path!
+
+Test the code by running main.py and changing the path when creating the Tracker object to test different videos
